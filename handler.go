@@ -9,6 +9,15 @@ import (
 	badger "github.com/dgraph-io/badger/v3"
 )
 
+type FixedTrainingTime struct {
+	WeekDay     string `json:"weekDay"`
+	StartTime   string `json:"startTime"`
+	EndTime     string `json:"endTime"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Location    string `json:"location"`
+}
+
 type WeekEvent struct {
 	EventID string   `json:"eventID"`
 	Users   []string `json:"users"`
@@ -30,8 +39,8 @@ func (w *Week) genVal() []byte {
 }
 
 type Handler struct {
-	inviteCode string
-	eventDB    *badger.DB
+	config  Config
+	eventDB *badger.DB
 }
 
 func (h *Handler) setup(s *discordgo.Session) {
@@ -80,6 +89,7 @@ func (h *Handler) userJoinedEvent(s *discordgo.Session, m *discordgo.GuildSchedu
 		return
 	}
 }
+
 func (h *Handler) userLeftEvent(s *discordgo.Session, m *discordgo.GuildScheduledEventUserRemove) {
 	event, err := s.GuildScheduledEvent(m.GuildID, m.GuildScheduledEventID, false)
 	if err != nil {
@@ -150,7 +160,25 @@ func (h *Handler) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate
 			return
 		}
 
-		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("https://discord.gg/%s?event=%s", h.inviteCode, event.ID))
+		invites, err := s.ChannelInvites(m.ChannelID)
+		if err != nil {
+			fmt.Printf("Error getting invites: %v", err)
+			return
+		}
+
+		inviteCode := ""
+
+		for _, invite := range invites {
+			if !invite.Temporary {
+				inviteCode = invite.Code
+			}
+		}
+
+		if inviteCode == "" {
+			fmt.Println("Could not find invite code")
+		} else {
+			s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("https://discord.gg/%s?event=%s", inviteCode, event.ID))
+		}
 
 		y, w := startingTime.ISOWeek()
 		key := []byte(fmt.Sprintf("%d-%d", y, w))

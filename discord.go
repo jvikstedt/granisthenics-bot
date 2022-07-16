@@ -11,7 +11,7 @@ type Discord struct {
 }
 
 func (d *Discord) start(token string, handler Handler) error {
-	dg, err := discordgo.New("Bot " + Token)
+	dg, err := discordgo.New("Bot " + token)
 	if err != nil {
 		fmt.Println("error creating Discord session,", err)
 		return err

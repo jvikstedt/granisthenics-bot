@@ -1,8 +1,9 @@
 package main
 
 import (
-	"flag"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
@@ -11,15 +12,28 @@ import (
 	badger "github.com/dgraph-io/badger/v3"
 )
 
-var (
-	Token      string
-	InviteCode string
-)
+type Config struct {
+	BotToken string `json:"botToken"`
+}
+
+var config Config
 
 func init() {
-	flag.StringVar(&Token, "t", "", "Bot Token")
-	flag.StringVar(&InviteCode, "ic", "", "Invite code")
-	flag.Parse()
+	configFile, err := os.Open("config.json")
+	if err != nil {
+	}
+
+	bytes, err := ioutil.ReadAll(configFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = json.Unmarshal(bytes, &config)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer configFile.Close()
 }
 
 func main() {
@@ -29,12 +43,11 @@ func main() {
 	}
 
 	handler := Handler{
-		inviteCode: InviteCode,
-		eventDB:    eventDB,
+		eventDB: eventDB,
 	}
 
 	discord := Discord{}
-	discord.start(Token, handler)
+	discord.start(config.BotToken, handler)
 
 	// Wait here until CTRL-C or other term signal is received.
 	fmt.Println("Bot is now running.  Press CTRL-C to exit.")
