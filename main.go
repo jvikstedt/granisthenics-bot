@@ -13,7 +13,8 @@ import (
 )
 
 type Config struct {
-	BotToken string `json:"botToken"`
+	BotToken           string              `json:"botToken"`
+	FixedTrainingTimes []FixedTrainingTime `json:"fixedTrainingTimes"`
 }
 
 var config Config
@@ -37,13 +38,14 @@ func init() {
 }
 
 func main() {
-	eventDB, err := badger.Open(badger.DefaultOptions("/tmp/event_db"))
+	eventDB, err := badger.Open(badger.DefaultOptions("event_db"))
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	handler := Handler{
 		eventDB: eventDB,
+		config:  config,
 	}
 
 	discord := Discord{}
