@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	badger "github.com/dgraph-io/badger/v3"
 )
@@ -15,6 +16,7 @@ import (
 type Config struct {
 	BotToken           string              `json:"botToken"`
 	FixedTrainingTimes []FixedTrainingTime `json:"fixedTrainingTimes"`
+	ChannelName        string              `json:"channelName"`
 }
 
 var config Config
@@ -50,6 +52,13 @@ func main() {
 
 	discord := Discord{}
 	discord.start(config.BotToken, handler)
+
+	go func() {
+		for {
+			time.Sleep(time.Minute * 5)
+			handler.check(discord.session)
+		}
+	}()
 
 	// Wait here until CTRL-C or other term signal is received.
 	fmt.Println("Bot is now running.  Press CTRL-C to exit.")
