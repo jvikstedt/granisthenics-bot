@@ -54,8 +54,7 @@ func (h *Handler) setup(s *discordgo.Session) {
 	s.AddHandler(h.ready)
 	s.AddHandler(h.reactionAdd)
 	s.AddHandler(h.reactionRemove)
-	s.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentGuildMessageReactions
-	// s.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentGuildScheduledEvents
+	s.Identify.Intents = discordgo.IntentsAll
 }
 
 func (h *Handler) ready(s *discordgo.Session, r *discordgo.Ready) {
@@ -94,16 +93,44 @@ func (h *Handler) reactionAdd(s *discordgo.Session, r *discordgo.MessageReaction
 		return
 	}
 
+	metadata, err := h.getMetadata(r.GuildID)
+	if err != nil {
+		fmt.Printf("Could not get metadata %v\n", err)
+		return
+	}
+
 	msgKey := []byte(fmt.Sprintf("%s-%s", r.GuildID, r.MessageID))
 
-	// Skip if reaction was not added on event message
-	isEvent := false
-	h.eventDB.View(func(txn *badger.Txn) error {
-		item, _ := txn.Get(msgKey)
-		isEvent = item != nil
+	event := Event{}
+	err = h.eventDB.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(msgKey)
+		if err != nil {
+			fmt.Printf("Error getting event: %v", err)
+			return err
+		}
+
+		err = item.Value(func(v []byte) error {
+			return json.Unmarshal(v, &event)
+		})
+		if err != nil {
+			fmt.Printf("Error unmarshalling data: %v", err)
+			return err
+		}
+
 		return nil
 	})
-	if !isEvent {
+
+	if err != nil {
+		return
+	}
+
+	// Remove reaction if event is not current week event
+	if _, ok := lo.Find(metadata.CurrentWeekEvents, func(eventID string) bool {
+		return eventID == event.MessageID
+	}); !ok {
+		if err := s.MessageReactionRemove(r.ChannelID, r.MessageID, r.Emoji.Name, r.UserID); err != nil {
+			fmt.Printf("Could not remove reaction %v\n", err)
+		}
 		return
 	}
 
@@ -282,6 +309,21 @@ func (h *Handler) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate
 		return
 	}
 
+	permissions, err := s.State.MessagePermissions(m.Message)
+	if err != nil {
+		fmt.Printf("Could not get permissions for user %v\n", err)
+		return
+	}
+
+	if permissions&discordgo.PermissionAdministrator == 0 {
+		fmt.Println("Non admin user tried to execute commands")
+		return
+	}
+
+	if m.Content == "!resetWeek" {
+		h.resetWeek(s, m.GuildID)
+	}
+
 	if m.Content == "!event" {
 		evt, err := h.createNewEvent(s, m.GuildID, "Reeni", "", "Kasavuori", time.Now(), time.Now().Add(1*time.Hour))
 		if err != nil {
@@ -363,7 +405,7 @@ func (h *Handler) createNewEvent(s *discordgo.Session, guildID, name, descriptio
 	loc, _ := time.LoadLocation("Europe/Helsinki")
 	format := "2.1 15:04"
 
-	msg, err := s.ChannelMessageSend(channel.ID, fmt.Sprintf("-------\n%s\n%s -> %s\n%s\n%s\n-------", name, startTime.In(loc).Format(format), endTime.In(loc).Format(format), description, location))
+	msg, err := s.ChannelMessageSend(channel.ID, fmt.Sprintf("━━━━━━━━━━\n**%s** :man_lifting_weights:\n%s -> %s\n%s\n%s\n@everyone\n━━━━━━━━━━", name, startTime.In(loc).Format(format), endTime.In(loc).Format(format), description, location))
 	if err != nil {
 		return nil, err
 	}
@@ -438,36 +480,110 @@ func (h *Handler) getMetadata(guildID string) (Metadata, error) {
 	return metadata, err
 }
 
+func (h *Handler) resetWeek(s *discordgo.Session, guildID string) (Metadata, error) {
+	fmt.Printf("Resetting CurrentWeekEvents\n")
+	metadataKey := []byte(fmt.Sprintf("%s-%s", guildID, KEY_METADATA))
+	metadata, err := h.getMetadata(guildID)
+	if err != nil {
+		fmt.Printf("Error getting metadata %v\n", err)
+		return Metadata{}, err
+	}
+
+	members, err := s.GuildMembers(guildID, "", 1000)
+	if err != nil {
+		return Metadata{}, err
+	}
+
+	// Filter out bots
+	members = lo.Reject(members, func(member *discordgo.Member, _ int) bool {
+		return member.User.Bot
+	})
+
+	msg := "Week overview:\n"
+	err = h.eventDB.View(func(txn *badger.Txn) error {
+		event := Event{}
+		for _, eventID := range metadata.CurrentWeekEvents {
+			eventKey := []byte(fmt.Sprintf("%s-%s", guildID, eventID))
+
+			item, err := txn.Get(eventKey)
+			if err != nil {
+				fmt.Printf("Error getting event: %v", err)
+				continue
+			}
+
+			err = item.Value(func(v []byte) error {
+				return json.Unmarshal(v, &event)
+			})
+			if err != nil {
+				fmt.Printf("Error unmarshalling data: %v", err)
+				continue
+			}
+
+			users := lo.FilterMap(event.AnswerYes, func(userID string, _ int) (*discordgo.User, bool) {
+				member, ok := lo.Find(members, func(member *discordgo.Member) bool {
+					return member.User.ID == userID
+				})
+				return member.User, ok
+			})
+
+			msg += fmt.Sprintf("**%s**\nParticipants: %d/%d\n", event.Name, len(users), len(members))
+
+			for i, user := range users {
+				msg += fmt.Sprintf("%s", user.Username)
+				if i < len(users)-1 {
+					msg += fmt.Sprint(", ")
+				}
+			}
+
+			msg += fmt.Sprintln()
+		}
+
+		channel, err := h.findChannelByName(s, guildID, h.config.ChannelName)
+		if err != nil {
+			return err
+		}
+		s.ChannelMessageSend(channel.ID, msg)
+
+		return nil
+	})
+
+	metadata.LastWeekReset = time.Now()
+	metadata.CurrentWeekEvents = []string{}
+
+	metadataBytes, err := json.Marshal(metadata)
+	if err != nil {
+		fmt.Printf("Error marshalling metadata %v\n", err)
+		return Metadata{}, err
+	}
+
+	err = h.eventDB.Update(func(txn *badger.Txn) error {
+		txn.SetEntry(badger.NewEntry(metadataKey, metadataBytes))
+		return nil
+	})
+	if err != nil {
+		fmt.Printf("Error saving metadata %v\n", err)
+		return Metadata{}, err
+	}
+
+	return metadata, nil
+}
+
 func (h *Handler) check(s *discordgo.Session) {
 	now := time.Now()
 
 	for _, guild := range s.State.Guilds {
-		metadataKey := []byte(fmt.Sprintf("%s-%s", guild.ID, KEY_METADATA))
 		metadata, err := h.getMetadata(guild.ID)
 		if err != nil {
 			fmt.Printf("Error getting metadata %v\n", err)
 			continue
 		}
 
-		// Is Monday and more than 7 days - 1 hour since last reset and its after 9 AM
+		// Is Monday and more than 7 days - 1 hour since last reset
 		if time.Since(metadata.LastWeekReset) >= (time.Hour*(24*7-1)) && now.Weekday() == time.Monday {
-			fmt.Printf("Resetting CurrentWeekEvents\n")
-			metadata.LastWeekReset = time.Now()
-			metadata.CurrentWeekEvents = []string{}
-
-			metadataBytes, err := json.Marshal(metadata)
+			metadata, err = h.resetWeek(s, guild.ID)
 			if err != nil {
-				fmt.Printf("Error marshalling metadata %v\n", err)
-				return
-			}
-
-			err = h.eventDB.Update(func(txn *badger.Txn) error {
-				txn.SetEntry(badger.NewEntry(metadataKey, metadataBytes))
-				return nil
-			})
-			if err != nil {
-				fmt.Printf("Error saving metadata %v\n", err)
-				return
+				fmt.Println("Error reseting week")
+				continue
 			}
 		}
 
@@ -506,6 +622,12 @@ func (h *Handler) check(s *discordgo.Session) {
 				t2 := time.Date(now.Year(), now.Month(), now.Day(), trainingTime.EndTimeHours, trainingTime.EndTimeMinutes, 0, now.Nanosecond(), now.Location())
 
 				if t1.Before(now) {
+					continue
+				}
+
+				// Don't create event if its before 9 AM, except if time till event is less than 2 hours
+				diff := t1.Sub(now)
+				if now.Hour() < 9 && diff.Hours() > 2 {
 					continue
 				}
 
