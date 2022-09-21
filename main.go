@@ -10,7 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	badger "github.com/dgraph-io/badger/v3"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 type Config struct {
@@ -40,14 +41,24 @@ func init() {
 }
 
 func main() {
-	eventDB, err := badger.Open(badger.DefaultOptions("event_db"))
+	eventDB, err := gorm.Open(sqlite.Open("events.db"), &gorm.Config{})
 	if err != nil {
-		log.Fatal(err)
+		panic("failed to connect database")
+	}
+
+	eventDB.AutoMigrate(&User{})
+	eventDB.AutoMigrate(&Answer{})
+	eventDB.AutoMigrate(&Event{})
+	eventDB.AutoMigrate(&Metadata{})
+	eventDB.AutoMigrate(&FixedTrainingTime{})
+
+	repository := Repository{
+		db: eventDB,
 	}
 
 	handler := Handler{
-		eventDB: eventDB,
-		config:  config,
+		repository: &repository,
+		config:     config,
 	}
 
 	discord := Discord{}
@@ -55,7 +66,7 @@ func main() {
 
 	go func() {
 		for {
-			time.Sleep(time.Minute * 5)
+			time.Sleep(time.Second * 5)
 			handler.check(discord.session)
 		}
 	}()
@@ -67,5 +78,4 @@ func main() {
 	<-sc
 
 	discord.stop()
-	eventDB.Close()
 }
