@@ -17,7 +17,6 @@ import (
 type Config struct {
 	BotToken           string              `json:"botToken"`
 	FixedTrainingTimes []FixedTrainingTime `json:"fixedTrainingTimes"`
-	ChannelName        string              `json:"channelName"`
 }
 
 var config Config

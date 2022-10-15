@@ -26,7 +26,6 @@ type User struct {
 	gorm.Model
 	GuildID  string `gorm:"uniqueIndex:guild_member_unique_index"`
 	MemberID string `gorm:"uniqueIndex:guild_member_unique_index"`
-	Answers  []Answer
 }
 
 type Answer struct {
@@ -34,6 +33,7 @@ type Answer struct {
 	YesNo   bool
 	EventID uint `gorm:"uniqueIndex:event_user_unique_index"`
 	UserID  uint `gorm:"uniqueIndex:event_user_unique_index"`
+	User    User
 }
 
 type Event struct {
@@ -75,4 +75,47 @@ func (r *Repository) CreateMetadata(metadata Metadata) (Metadata, error) {
 	result := r.db.Create(&metadata)
 
 	return metadata, result.Error
+}
+
+func (r *Repository) FindEvent(guildID string, messageID string) (Event, error) {
+	event := Event{}
+	result := r.db.Where("guild_id = ? AND message_id = ?", guildID, messageID).Preload("Answers").First(&event)
+	err := result.Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return event, ErrRecordNotFound
+	}
+
+	return event, err
+}
+
+func (r *Repository) CreateEvent(event Event) (Event, error) {
+	result := r.db.Create(&event)
+
+	return event, result.Error
+}
+
+func (r *Repository) CreateUser(user User) (User, error) {
+	result := r.db.Create(&user)
+
+	return user, result.Error
+}
+
+func (r *Repository) FindUser(guildID string, memberID string) (User, error) {
+	user := User{}
+	result := r.db.Where("guild_id = ? AND member_id = ?", guildID, memberID).First(&user)
+	err := result.Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return user, ErrRecordNotFound
+	}
+
+	return user, err
+}
+
+func (r *Repository) FindUsers(guildID string) ([]User, error) {
+	users := []User{}
+	result := r.db.Where("guild_id = ?", guildID).Find(&users)
+
+	return users, result.Error
 }

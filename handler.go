@@ -30,7 +30,6 @@ func (h *Handler) setup(s *discordgo.Session) {
 
 func (h *Handler) ready(s *discordgo.Session, r *discordgo.Ready) {
 	h.botID = r.User.ID
-	h.createEventChannels(s)
 
 	for _, guild := range s.State.Guilds {
 		_, err := h.repository.FindMetadataByGuildID(guild.ID)
@@ -56,6 +55,8 @@ func (h *Handler) ready(s *discordgo.Session, r *discordgo.Ready) {
 			// Do nothing
 		}
 	}
+
+	h.createEventChannels(s)
 }
 
 func (h *Handler) reactionAdd(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
@@ -64,11 +65,80 @@ func (h *Handler) reactionAdd(s *discordgo.Session, r *discordgo.MessageReaction
 		return
 	}
 
-	// metadata, err := h.getMetadata(r.GuildID)
+	// metadata, err := h.repository.FindMetadataByGuildID(r.GuildID)
 	// if err != nil {
 	// 	fmt.Printf("Could not get metadata %v\n", err)
 	// 	return
 	// }
+
+	_, err := h.repository.FindEvent(r.GuildID, r.MessageID)
+	if err != nil {
+		fmt.Printf("Could not get event %v\n", err)
+		return
+	}
+
+	// Only allow yes or no reactions, remove otherwise
+	if r.Emoji.Name != REACTION_NO && r.Emoji.Name != REACTION_YES {
+		if err := s.MessageReactionRemove(r.ChannelID, r.MessageID, r.Emoji.Name, r.UserID); err != nil {
+			fmt.Printf("Could not remove reaction %v\n", err)
+		}
+
+		return
+	}
+
+	// TODO
+	// // Remove reaction if event is not current week event
+	// if _, ok := lo.Find(metadata.CurrentWeekEvents, func(eventID string) bool {
+	// 	return eventID == event.MessageID
+	// }); !ok {
+	// 	if err := s.MessageReactionRemove(r.ChannelID, r.MessageID, r.Emoji.Name, r.UserID); err != nil {
+	// 		fmt.Printf("Could not remove reaction %v\n", err)
+	// 	}
+	// 	return
+	// }
+
+	// users, err := h.repository.FindUsers(r.GuildID)
+	// if err != nil {
+	// 	fmt.Printf("Could not get users %v\n", err)
+	// 	return
+	// }
+
+	answerYes := r.Emoji.Name == REACTION_YES
+
+	noReactions, err := s.MessageReactions(r.ChannelID, r.MessageID, REACTION_NO, 100, "", "")
+	if err != nil {
+		fmt.Printf("Could not get no reactions %v\n", err)
+		return
+	}
+
+	yesReactions, err := s.MessageReactions(r.ChannelID, r.MessageID, REACTION_YES, 100, "", "")
+	if err != nil {
+		fmt.Printf("Could not get yes reactions %v\n", err)
+		return
+	}
+
+	// Only allow one reaction at the time
+	if answerYes {
+		_, existingNo := lo.Find(noReactions, func(u *discordgo.User) bool {
+			return u.ID == r.UserID
+		})
+		if existingNo {
+			if err := s.MessageReactionRemove(r.ChannelID, r.MessageID, REACTION_NO, r.UserID); err != nil {
+				fmt.Printf("Could not remove reaction %v\n", err)
+			}
+		}
+	} else {
+		_, existingYes := lo.Find(yesReactions, func(u *discordgo.User) bool {
+			return u.ID == r.UserID
+		})
+		if existingYes {
+			if err := s.MessageReactionRemove(r.ChannelID, r.MessageID, REACTION_YES, r.UserID); err != nil {
+				fmt.Printf("Could not remove reaction %v\n", err)
+			}
+		}
+	}
+
+	// TODO update event in sql
 
 	// msgKey := []byte(fmt.Sprintf("%s-%s", r.GuildID, r.MessageID))
 
@@ -93,60 +163,6 @@ func (h *Handler) reactionAdd(s *discordgo.Session, r *discordgo.MessageReaction
 
 	// if err != nil {
 	// 	return
-	// }
-
-	// // Remove reaction if event is not current week event
-	// if _, ok := lo.Find(metadata.CurrentWeekEvents, func(eventID string) bool {
-	// 	return eventID == event.MessageID
-	// }); !ok {
-	// 	if err := s.MessageReactionRemove(r.ChannelID, r.MessageID, r.Emoji.Name, r.UserID); err != nil {
-	// 		fmt.Printf("Could not remove reaction %v\n", err)
-	// 	}
-	// 	return
-	// }
-
-	// // Only allow yes or no reactions, remove otherwise
-	// if r.Emoji.Name != REACTION_NO && r.Emoji.Name != REACTION_YES {
-	// 	if err := s.MessageReactionRemove(r.ChannelID, r.MessageID, r.Emoji.Name, r.UserID); err != nil {
-	// 		fmt.Printf("Could not remove reaction %v\n", err)
-	// 	}
-
-	// 	return
-	// }
-
-	// answerYes := r.Emoji.Name == REACTION_YES
-
-	// noReactions, err := s.MessageReactions(r.ChannelID, r.MessageID, REACTION_NO, 100, "", "")
-	// if err != nil {
-	// 	fmt.Printf("Could not get no reactions %v\n", err)
-	// 	return
-	// }
-
-	// yesReactions, err := s.MessageReactions(r.ChannelID, r.MessageID, REACTION_YES, 100, "", "")
-	// if err != nil {
-	// 	fmt.Printf("Could not get yes reactions %v\n", err)
-	// 	return
-	// }
-
-	// // Only allow one reaction at the time
-	// if answerYes {
-	// 	_, existingNo := lo.Find(noReactions, func(u *discordgo.User) bool {
-	// 		return u.ID == r.UserID
-	// 	})
-	// 	if existingNo {
-	// 		if err := s.MessageReactionRemove(r.ChannelID, r.MessageID, REACTION_NO, r.UserID); err != nil {
-	// 			fmt.Printf("Could not remove reaction %v\n", err)
-	// 		}
-	// 	}
-	// } else {
-	// 	_, existingYes := lo.Find(yesReactions, func(u *discordgo.User) bool {
-	// 		return u.ID == r.UserID
-	// 	})
-	// 	if existingYes {
-	// 		if err := s.MessageReactionRemove(r.ChannelID, r.MessageID, REACTION_YES, r.UserID); err != nil {
-	// 			fmt.Printf("Could not remove reaction %v\n", err)
-	// 		}
-	// 	}
 	// }
 
 	// err = h.eventDB.Update(func(txn *badger.Txn) error {
@@ -194,31 +210,17 @@ func (h *Handler) reactionAdd(s *discordgo.Session, r *discordgo.MessageReaction
 
 func (h *Handler) reactionRemove(s *discordgo.Session, r *discordgo.MessageReactionRemove) {
 	// Skip bots own reactions
-	// if r.UserID == h.botID {
-	// 	return
-	// }
+	if r.UserID == h.botID {
+		return
+	}
 
-	// msgKey := []byte(fmt.Sprintf("%s-%s", r.GuildID, r.MessageID))
+	_, err := h.repository.FindEvent(r.GuildID, r.MessageID)
+	if err != nil {
+		fmt.Printf("Could not get event %v\n", err)
+		return
+	}
 
-	// // Skip if reaction was not added on event message
-	// isEvent := false
-	// h.eventDB.View(func(txn *badger.Txn) error {
-	// 	item, _ := txn.Get(msgKey)
-	// 	isEvent = item != nil
-	// 	return nil
-	// })
-	// if !isEvent {
-	// 	return
-	// }
-
-	// // Only allow yes or no reactions, remove otherwise
-	// if r.Emoji.Name != REACTION_NO && r.Emoji.Name != REACTION_YES {
-	// 	if err := s.MessageReactionRemove(r.ChannelID, r.MessageID, r.Emoji.Name, r.UserID); err != nil {
-	// 		fmt.Printf("Could not remove reaction %v\n", err)
-	// 	}
-
-	// 	return
-	// }
+	// TODO update event in sql
 
 	// noReactions, err := s.MessageReactions(r.ChannelID, r.MessageID, REACTION_NO, 100, "", "")
 	// if err != nil {
@@ -308,32 +310,6 @@ func (h *Handler) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate
 	if m.Content == "!check" {
 		h.check(s)
 	}
-
-	// if m.Content == "!listEvents" {
-	// 	err := h.eventDB.View(func(txn *badger.Txn) error {
-	// 		opts := badger.DefaultIteratorOptions
-	// 		opts.PrefetchSize = 10
-	// 		it := txn.NewIterator(opts)
-	// 		defer it.Close()
-	// 		for it.Rewind(); it.Valid(); it.Next() {
-	// 			item := it.Item()
-	// 			k := item.Key()
-	// 			err := item.Value(func(v []byte) error {
-	// 				s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("key=%s, value=%s", k, v))
-	// 				return nil
-	// 			})
-	// 			if err != nil {
-	// 				return err
-	// 			}
-	// 		}
-	// 		return nil
-	// 	})
-
-	// 	if err != nil {
-	// 		fmt.Printf("Error viewing db: %v", err)
-	// 		return
-	// 	}
-	// }
 }
 
 func (h *Handler) findChannelByName(s *discordgo.Session, guildID string, name string) (*discordgo.Channel, error) {
@@ -354,10 +330,15 @@ func (h *Handler) findChannelByName(s *discordgo.Session, guildID string, name s
 
 func (h *Handler) createEventChannels(s *discordgo.Session) error {
 	for _, guild := range s.State.Guilds {
-		if _, err := h.findChannelByName(s, guild.ID, h.config.ChannelName); err != nil {
-			fmt.Printf("Channel: %s does not exist for Guild: %s, creating...\n", h.config.ChannelName, guild.Name)
+		metadata, err := h.repository.FindMetadataByGuildID(guild.ID)
+		if err != nil {
+			continue
+		}
 
-			if _, err := s.GuildChannelCreate(guild.ID, h.config.ChannelName, discordgo.ChannelTypeGuildText); err != nil {
+		if _, err := h.findChannelByName(s, guild.ID, metadata.ChannelName); err != nil {
+			fmt.Printf("Channel: %s does not exist for Guild: %s, creating...\n", metadata.ChannelName, guild.Name)
+
+			if _, err := s.GuildChannelCreate(guild.ID, metadata.ChannelName, discordgo.ChannelTypeGuildText); err != nil {
 				fmt.Printf("Failed to create channel %v\n", err)
 				continue
 			}
@@ -368,7 +349,11 @@ func (h *Handler) createEventChannels(s *discordgo.Session) error {
 }
 
 func (h *Handler) createNewEvent(s *discordgo.Session, guildID, name, description, location string, startTime, endTime time.Time) (*Event, error) {
-	channel, err := h.findChannelByName(s, guildID, h.config.ChannelName)
+	metadata, err := h.repository.FindMetadataByGuildID(guildID)
+	if err != nil {
+		return nil, err
+	}
+	channel, err := h.findChannelByName(s, guildID, metadata.ChannelName)
 	if err != nil {
 		return nil, err
 	}
@@ -388,69 +373,23 @@ func (h *Handler) createNewEvent(s *discordgo.Session, guildID, name, descriptio
 		return nil, err
 	}
 
-	// event := &Event{
-	// 	MessageID:   msg.ID,
-	// 	AnswerYes:   []string{},
-	// 	AnswerNo:    []string{},
-	// 	Name:        name,
-	// 	Description: description,
-	// 	Location:    location,
-	// 	StartTime:   startTime,
-	// 	EndTime:     endTime,
-	// }
+	event := Event{
+		GuildID:     guildID,
+		MessageID:   msg.ID,
+		Name:        name,
+		Description: description,
+		Location:    location,
+		StartTime:   startTime,
+		EndTime:     endTime,
+		Answers:     []Answer{},
+	}
 
-	// bytes, err := json.Marshal(event)
-	// if err != nil {
-	// 	return nil, err
-	// }
+	event, err = h.repository.CreateEvent(event)
+	if err != nil {
+		return nil, err
+	}
 
-	// metadata, err := h.getMetadata(guildID)
-	// if err != nil {
-	// 	fmt.Printf("metadata not found %s\n", guildID)
-	// 	return nil, err
-	// }
-
-	// metadata.CurrentWeekEvents = append(metadata.CurrentWeekEvents, msg.ID)
-	// metadata.AllEvents = append(metadata.AllEvents, msg.ID)
-	// metadataBytes, err := json.Marshal(metadata)
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	// metadataKey := []byte(fmt.Sprintf("%s-%s", guildID, KEY_METADATA))
-	// msgKey := []byte(fmt.Sprintf("%s-%s", guildID, msg.ID))
-	// return event, h.eventDB.Update(func(txn *badger.Txn) error {
-	// 	txn.SetEntry(badger.NewEntry(metadataKey, metadataBytes))
-	// 	txn.SetEntry(badger.NewEntry(msgKey, bytes))
-	// 	return nil
-	// })
-	return &Event{}, nil
-}
-
-func (h *Handler) getMetadata(guildID string) (Metadata, error) {
-	// 	metadata := Metadata{}
-	//
-	// 	key := []byte(fmt.Sprintf("%s-%s", guildID, KEY_METADATA))
-	//
-	// err := h.eventDB.View(func(txn *badger.Txn) error {
-	// 	item, err := txn.Get(key)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-
-	// 	err = item.Value(func(v []byte) error {
-	// 		return json.Unmarshal(v, &metadata)
-	// 	})
-	// 	if err != nil {
-	// 		fmt.Printf("Error unmarshalling data: %v", err)
-	// 		return err
-	// 	}
-
-	// 	return nil
-	// })
-	//
-	// 	return metadata, err
-	return Metadata{}, nil
+	return &event, nil
 }
 
 func (h *Handler) resetWeek(s *discordgo.Session, guildID string) (Metadata, error) {
@@ -543,85 +482,85 @@ func (h *Handler) resetWeek(s *discordgo.Session, guildID string) (Metadata, err
 }
 
 func (h *Handler) check(s *discordgo.Session) {
-	now := time.Now()
+	// now := time.Now()
 
-	for _, guild := range s.State.Guilds {
-		metadata, err := h.getMetadata(guild.ID)
-		if err != nil {
-			fmt.Printf("Error getting metadata %v\n", err)
-			continue
-		}
+	// for _, guild := range s.State.Guilds {
+	// metadata, err := h.getMetadata(guild.ID)
+	// if err != nil {
+	// 	fmt.Printf("Error getting metadata %v\n", err)
+	// 	continue
+	// }
 
-		// Is Monday and more than 7 days - 1 hour since last reset
-		if time.Since(metadata.LastWeekReset) >= (time.Hour*(24*7-1)) && now.Weekday() == time.Monday {
-			metadata, err = h.resetWeek(s, guild.ID)
-			if err != nil {
-				fmt.Println("Error reseting week")
-				continue
-			}
-		}
+	// // Is Monday and more than 7 days - 1 hour since last reset
+	// if time.Since(metadata.LastWeekReset) >= (time.Hour*(24*7-1)) && now.Weekday() == time.Monday {
+	// 	metadata, err = h.resetWeek(s, guild.ID)
+	// 	if err != nil {
+	// 		fmt.Println("Error reseting week")
+	// 		continue
+	// 	}
+	// }
 
-		currentWeekEvents := []Event{}
+	// currentWeekEvents := []Event{}
 
-		// err = h.eventDB.View(func(txn *badger.Txn) error {
-		// 	event := Event{}
-		// 	for _, eventID := range metadata.CurrentWeekEvents {
-		// 		item, err := txn.Get([]byte(fmt.Sprintf("%s-%s", guild.ID, eventID)))
-		// 		if err != nil {
-		// 			return err
-		// 		}
+	// err = h.eventDB.View(func(txn *badger.Txn) error {
+	// 	event := Event{}
+	// 	for _, eventID := range metadata.CurrentWeekEvents {
+	// 		item, err := txn.Get([]byte(fmt.Sprintf("%s-%s", guild.ID, eventID)))
+	// 		if err != nil {
+	// 			return err
+	// 		}
 
-		// 		err = item.Value(func(v []byte) error {
-		// 			return json.Unmarshal(v, &event)
-		// 		})
-		// 		if err != nil {
-		// 			fmt.Printf("Error unmarshalling data: %v", err)
-		// 			return err
-		// 		}
+	// 		err = item.Value(func(v []byte) error {
+	// 			return json.Unmarshal(v, &event)
+	// 		})
+	// 		if err != nil {
+	// 			fmt.Printf("Error unmarshalling data: %v", err)
+	// 			return err
+	// 		}
 
-		// 		currentWeekEvents = append(currentWeekEvents, event)
-		// 	}
+	// 		currentWeekEvents = append(currentWeekEvents, event)
+	// 	}
 
-		// 	return nil
-		// })
-		// if err != nil {
-		// 	fmt.Printf("Error getting week events %v\n", err)
-		// 	continue
-		// }
+	// 	return nil
+	// })
+	// if err != nil {
+	// 	fmt.Printf("Error getting week events %v\n", err)
+	// 	continue
+	// }
 
-		// Check fixed training times
-		for _, trainingTime := range h.config.FixedTrainingTimes {
-			if int(now.Weekday()) == trainingTime.WeekDay {
-				t1 := time.Date(now.Year(), now.Month(), now.Day(), trainingTime.StartTimeHours, trainingTime.StartTimeMinutes, 0, now.Nanosecond(), now.Location())
-				t2 := time.Date(now.Year(), now.Month(), now.Day(), trainingTime.EndTimeHours, trainingTime.EndTimeMinutes, 0, now.Nanosecond(), now.Location())
+	// Check fixed training times
+	// for _, trainingTime := range h.config.FixedTrainingTimes {
+	// 	if int(now.Weekday()) == trainingTime.WeekDay {
+	// 		t1 := time.Date(now.Year(), now.Month(), now.Day(), trainingTime.StartTimeHours, trainingTime.StartTimeMinutes, 0, now.Nanosecond(), now.Location())
+	// 		t2 := time.Date(now.Year(), now.Month(), now.Day(), trainingTime.EndTimeHours, trainingTime.EndTimeMinutes, 0, now.Nanosecond(), now.Location())
 
-				if t1.Before(now) {
-					continue
-				}
+	// 		if t1.Before(now) {
+	// 			continue
+	// 		}
 
-				// Don't create event if its before 9 AM, except if time till event is less than 2 hours
-				diff := t1.Sub(now)
-				if now.Hour() < 6 && diff.Hours() > 2 {
-					continue
-				}
+	// 		// Don't create event if its before 9 AM, except if time till event is less than 2 hours
+	// 		diff := t1.Sub(now)
+	// 		if now.Hour() < 6 && diff.Hours() > 2 {
+	// 			continue
+	// 		}
 
-				_, ok := lo.Find(currentWeekEvents, func(event Event) bool {
-					return event.Name == trainingTime.Name &&
-						int(event.StartTime.Weekday()) == trainingTime.WeekDay &&
-						event.StartTime.Hour() == trainingTime.StartTimeHours &&
-						event.StartTime.Minute() == trainingTime.StartTimeMinutes
-				})
+	// 		_, ok := lo.Find(currentWeekEvents, func(event Event) bool {
+	// 			return event.Name == trainingTime.Name &&
+	// 				int(event.StartTime.Weekday()) == trainingTime.WeekDay &&
+	// 				event.StartTime.Hour() == trainingTime.StartTimeHours &&
+	// 				event.StartTime.Minute() == trainingTime.StartTimeMinutes
+	// 		})
 
-				if ok {
-					continue
-				}
+	// 		if ok {
+	// 			continue
+	// 		}
 
-				_, err := h.createNewEvent(s, guild.ID, trainingTime.Name, trainingTime.Description, trainingTime.Location, t1, t2)
-				if err != nil {
-					fmt.Printf("Error creating an event %v\n", err)
-					continue
-				}
-			}
-		}
-	}
+	// 		_, err := h.createNewEvent(s, guild.ID, trainingTime.Name, trainingTime.Description, trainingTime.Location, t1, t2)
+	// 		if err != nil {
+	// 			fmt.Printf("Error creating an event %v\n", err)
+	// 			continue
+	// 		}
+	// 	}
+	// }
+	// }
 }
