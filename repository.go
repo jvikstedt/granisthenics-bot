@@ -26,11 +26,12 @@ type User struct {
 	gorm.Model
 	GuildID  string `gorm:"uniqueIndex:guild_member_unique_index"`
 	MemberID string `gorm:"uniqueIndex:guild_member_unique_index"`
+	Name     string
 }
 
 type Answer struct {
 	gorm.Model
-	YesNo   bool
+	YesNo   string
 	EventID uint `gorm:"uniqueIndex:event_user_unique_index"`
 	UserID  uint `gorm:"uniqueIndex:event_user_unique_index"`
 	User    User
@@ -89,6 +90,13 @@ func (r *Repository) FindEvent(guildID string, messageID string) (Event, error) 
 	return event, err
 }
 
+func (r *Repository) FindEvents(guildID string) ([]Event, error) {
+	events := []Event{}
+	result := r.db.Where("guild_id = ?", guildID).Find(&events)
+
+	return events, result.Error
+}
+
 func (r *Repository) CreateEvent(event Event) (Event, error) {
 	result := r.db.Create(&event)
 
@@ -118,4 +126,26 @@ func (r *Repository) FindUsers(guildID string) ([]User, error) {
 	result := r.db.Where("guild_id = ?", guildID).Find(&users)
 
 	return users, result.Error
+}
+
+func (r *Repository) FindAnswer(eventID uint, userID uint) (Answer, error) {
+	answer := Answer{}
+	result := r.db.Where("event_id = ? AND user_id", eventID, userID).First(&answer)
+	err := result.Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return answer, ErrRecordNotFound
+	}
+
+	return answer, result.Error
+}
+
+func (r *Repository) UpdateOrCreateAnswer(answer Answer) (Answer, error) {
+	result := r.db.Model(&answer).Where("id = ?", answer.ID).Updates(&answer)
+
+	if result.RowsAffected == 0 {
+		result = r.db.Create(&answer)
+	}
+
+	return answer, result.Error
 }
