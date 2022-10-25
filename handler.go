@@ -301,4 +301,44 @@ func (h *Handler) createNewEvent(s *discordgo.Session, guildID, name, descriptio
 
 func (h *Handler) check(s *discordgo.Session) {
 	fmt.Println("Running check")
+	now := time.Now()
+
+	for _, guild := range s.State.Guilds {
+		// Check fixed training times
+		for _, trainingTime := range h.config.FixedTrainingTimes {
+			if int(now.Weekday()) == trainingTime.WeekDay {
+				t1 := time.Date(now.Year(), now.Month(), now.Day(), trainingTime.StartTimeHours, trainingTime.StartTimeMinutes, 0, now.Nanosecond(), now.Location())
+				t2 := time.Date(now.Year(), now.Month(), now.Day(), trainingTime.EndTimeHours, trainingTime.EndTimeMinutes, 0, now.Nanosecond(), now.Location())
+
+				if t1.Before(now) {
+					continue
+				}
+
+				// Don't create event if its before 9 AM, except if time till event is less than 2 hours
+				diff := t1.Sub(now)
+				if now.Hour() < 9 && diff.Hours() > 2 {
+					continue
+				}
+
+				events, err := h.repository.FindEvents(guild.ID)
+
+				_, ok := lo.Find(events, func(event Event) bool {
+					return event.Name == trainingTime.Name &&
+						int(event.StartTime.Weekday()) == trainingTime.WeekDay &&
+						event.StartTime.Hour() == trainingTime.StartTimeHours &&
+						event.StartTime.Minute() == trainingTime.StartTimeMinutes
+				})
+
+				if ok {
+					continue
+				}
+
+				_, err = h.createNewEvent(s, guild.ID, trainingTime.Name, trainingTime.Description, trainingTime.Location, t1, t2)
+				if err != nil {
+					fmt.Printf("Error creating an event %v\n", err)
+					continue
+				}
+			}
+		}
+	}
 }
