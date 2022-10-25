@@ -174,7 +174,7 @@ func (h *Handler) updateEvent(s *discordgo.Session, guildID string, messageID st
 			return u.ID == a.UserID
 		})
 
-		return fmt.Sprintf("%s %s (%s)", user.Name, yesNoToReaction(a.YesNo), a.UpdatedAt.In(loc).Format(format))
+		return fmt.Sprintf("%s %s (%s)", yesNoToReaction(a.YesNo), user.Name, a.UpdatedAt.In(loc).Format(format))
 	})
 
 	_, err = s.ChannelMessageEdit(channel.ID, event.MessageID, buildEventContent(event.Name, event.StartTime, event.EndTime, event.Description, event.Location, strings.Join(answersSlice, "\n")))
