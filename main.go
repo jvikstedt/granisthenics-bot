@@ -65,7 +65,7 @@ func main() {
 
 	go func() {
 		for {
-			time.Sleep(time.Second * 5)
+			time.Sleep(time.Second * 60)
 			handler.check(discord.session)
 		}
 	}()
