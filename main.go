@@ -12,6 +12,7 @@ import (
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 type Config struct {
@@ -40,7 +41,18 @@ func init() {
 }
 
 func main() {
-	eventDB, err := gorm.Open(sqlite.Open("events.db"), &gorm.Config{})
+	newLogger := logger.New(
+		log.New(os.Stdout, "\r\n", log.LstdFlags),
+		logger.Config{
+			SlowThreshold:             200 * time.Millisecond,
+			LogLevel:                  logger.Info,
+			IgnoreRecordNotFoundError: false,
+			Colorful:                  true,
+		},
+	)
+	eventDB, err := gorm.Open(sqlite.Open("events.db"), &gorm.Config{
+		Logger: newLogger,
+	})
 	if err != nil {
 		panic("failed to connect database")
 	}

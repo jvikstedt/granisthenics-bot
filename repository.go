@@ -130,7 +130,7 @@ func (r *Repository) FindUsers(guildID string) ([]User, error) {
 
 func (r *Repository) FindAnswer(eventID uint, userID uint) (Answer, error) {
 	answer := Answer{}
-	result := r.db.Where("event_id = ? AND user_id", eventID, userID).First(&answer)
+	result := r.db.Where("event_id = ? AND user_id = ?", eventID, userID).First(&answer)
 	err := result.Error
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
