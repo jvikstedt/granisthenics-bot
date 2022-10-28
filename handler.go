@@ -19,6 +19,7 @@ type Handler struct {
 const REACTION_NO = "❌"
 const REACTION_YES = "✅"
 const REACTION_MAYBE = "❔"
+const REACTION_RELOAD = "🔃"
 
 const KEY_METADATA = "METADATA"
 
@@ -63,6 +64,14 @@ func (h *Handler) ready(s *discordgo.Session, r *discordgo.Ready) {
 func (h *Handler) reactionAdd(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
 	// Skip bots own reactions
 	if r.UserID == h.botID {
+		return
+	}
+
+	if r.Emoji.Name == REACTION_RELOAD {
+		if err := h.updateEvent(s, r.GuildID, r.MessageID); err != nil {
+			fmt.Printf("Could not update event %v\n", err)
+		}
+
 		return
 	}
 
