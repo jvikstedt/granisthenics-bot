@@ -90,9 +90,9 @@ func (r *Repository) FindEvent(guildID string, messageID string) (Event, error) 
 	return event, err
 }
 
-func (r *Repository) FindEvents(guildID string) ([]Event, error) {
+func (r *Repository) FindEvents(guildID string, since time.Time) ([]Event, error) {
 	events := []Event{}
-	result := r.db.Where("guild_id = ?", guildID).Find(&events)
+	result := r.db.Where("guild_id = ? AND start_time > ?", guildID, since).Find(&events)
 
 	return events, result.Error
 }

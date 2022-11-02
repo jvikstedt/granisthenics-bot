@@ -329,7 +329,8 @@ func (h *Handler) check(s *discordgo.Session) {
 					continue
 				}
 
-				events, err := h.repository.FindEvents(guild.ID)
+				since := time.Now().AddDate(0, 0, -6)
+				events, err := h.repository.FindEvents(guild.ID, since)
 
 				_, ok := lo.Find(events, func(event Event) bool {
 					return event.Name == trainingTime.Name &&
