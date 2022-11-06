@@ -10,13 +10,14 @@ import (
 	"syscall"
 	"time"
 
-	badger "github.com/dgraph-io/badger/v3"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 type Config struct {
 	BotToken           string              `json:"botToken"`
 	FixedTrainingTimes []FixedTrainingTime `json:"fixedTrainingTimes"`
-	ChannelName        string              `json:"channelName"`
 }
 
 var config Config
@@ -40,14 +41,35 @@ func init() {
 }
 
 func main() {
-	eventDB, err := badger.Open(badger.DefaultOptions("event_db"))
+	newLogger := logger.New(
+		log.New(os.Stdout, "\r\n", log.LstdFlags),
+		logger.Config{
+			SlowThreshold:             200 * time.Millisecond,
+			LogLevel:                  logger.Info,
+			IgnoreRecordNotFoundError: false,
+			Colorful:                  true,
+		},
+	)
+	eventDB, err := gorm.Open(sqlite.Open("events.db"), &gorm.Config{
+		Logger: newLogger,
+	})
 	if err != nil {
-		log.Fatal(err)
+		panic("failed to connect database")
+	}
+
+	eventDB.AutoMigrate(&User{})
+	eventDB.AutoMigrate(&Answer{})
+	eventDB.AutoMigrate(&Event{})
+	eventDB.AutoMigrate(&Metadata{})
+	eventDB.AutoMigrate(&FixedTrainingTime{})
+
+	repository := Repository{
+		db: eventDB,
 	}
 
 	handler := Handler{
-		eventDB: eventDB,
-		config:  config,
+		repository: &repository,
+		config:     config,
 	}
 
 	discord := Discord{}
@@ -55,7 +77,7 @@ func main() {
 
 	go func() {
 		for {
-			time.Sleep(time.Minute * 5)
+			time.Sleep(time.Second * 60)
 			handler.check(discord.session)
 		}
 	}()
@@ -67,5 +89,4 @@ func main() {
 	<-sc
 
 	discord.stop()
-	eventDB.Close()
 }
