@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"strings"
@@ -8,6 +9,10 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/samber/lo"
+	"gonum.org/v1/plot"
+	"gonum.org/v1/plot/plotter"
+	"gonum.org/v1/plot/plotutil"
+	"gonum.org/v1/plot/vg"
 )
 
 type Handler struct {
@@ -229,6 +234,77 @@ func (h *Handler) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate
 	if m.Content == "!check" {
 		h.check(s)
 	}
+
+	if m.Content == "!participations" {
+		users, err := h.repository.FindUsers(m.GuildID)
+		if err != nil {
+			fmt.Printf("Error getting users: %v\n", err)
+			return
+		}
+
+		events, err := h.repository.FindEvents(m.GuildID, time.Time{})
+		if err != nil {
+			fmt.Printf("Error getting events: %v\n", err)
+			return
+		}
+
+		p := plot.New()
+
+		p.Title.Text = "Event participations"
+		p.X.Label.Text = "Events"
+		p.Y.Label.Text = "Participations"
+
+		trainingPoints := []interface{}{}
+
+		for _, user := range users {
+			trainingPoints = append(trainingPoints, user.Name)
+
+			trainingPoints = append(trainingPoints, h.createTrainingPoints(user, events))
+		}
+
+		err = plotutil.AddLinePoints(p, trainingPoints...)
+		if err != nil {
+			fmt.Printf("Error adding line points: %v\n", err)
+			return
+		}
+
+		imgBytes := []byte{}
+		buffer := bytes.NewBuffer(imgBytes)
+
+		writerTo, err := p.WriterTo(6*vg.Inch, 6*vg.Inch, "png")
+		if err != nil {
+			fmt.Printf("Error getting writerTo: %v\n", err)
+			return
+		}
+
+		_, err = writerTo.WriteTo(buffer)
+		if err != nil {
+			fmt.Printf("Error writing to buffer: %v\n", err)
+			return
+		}
+
+		s.ChannelFileSend(m.ChannelID, "event_participations.png", buffer)
+	}
+}
+
+func (h *Handler) createTrainingPoints(user User, events []Event) plotter.XYs {
+	pts := plotter.XYs{}
+
+	counter := 0
+
+	for i, evt := range events {
+		answer, _ := h.repository.FindAnswer(evt.ID, user.ID)
+		if answer.YesNo == "yes" {
+			counter += 1
+
+			pts = append(pts, plotter.XY{
+				X: float64(i),
+				Y: float64(counter),
+			})
+		}
+	}
+
+	return pts
 }
 
 func (h *Handler) findChannelByName(s *discordgo.Session, guildID string, name string) (*discordgo.Channel, error) {
