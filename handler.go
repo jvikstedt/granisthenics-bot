@@ -202,7 +202,7 @@ func (h *Handler) updateEvent(s *discordgo.Session, guildID string, messageID st
 func buildEventContent(name string, startTime time.Time, endTime time.Time, description string, location string, answers string) string {
 	loc, _ := time.LoadLocation("Europe/Helsinki")
 	format := "2.1 15:04"
-	return fmt.Sprintf("━━━━━━━━━━\n**%s** :man_lifting_weights:\n%s -> %s\n%s\n%s\n%s\n@reenaajat\n━━━━━━━━━━", name, startTime.In(loc).Format(format), endTime.In(loc).Format(format), description, location, answers)
+	return fmt.Sprintf("━━━━━━━━━━\n**%s** :man_lifting_weights:\n%s -> %s\n%s\n%s\n%s\n<@&1031539054971461673>\n━━━━━━━━━━", name, startTime.In(loc).Format(format), endTime.In(loc).Format(format), description, location, answers)
 }
 
 func (h *Handler) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -253,6 +253,10 @@ func (h *Handler) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate
 		p.Title.Text = "Event participations"
 		p.X.Label.Text = "Events"
 		p.Y.Label.Text = "Participations"
+		p.X.Tick.Marker = DateTicks{
+			events: events,
+		}
+		p.Add(plotter.NewGrid())
 
 		trainingPoints := []interface{}{}
 
@@ -427,4 +431,30 @@ func (h *Handler) check(s *discordgo.Session) {
 			}
 		}
 	}
+}
+
+type DateTicks struct {
+	events []Event
+}
+
+func (c DateTicks) Ticks(min, max float64) []plot.Tick {
+	loc, _ := time.LoadLocation("Europe/Helsinki")
+	format := "2.1"
+
+	ticks := []plot.Tick{}
+
+	for i, evt := range c.events {
+		label := ""
+
+		if evt.StartTime.Weekday() == time.Monday {
+			label = evt.StartTime.In(loc).Format(format)
+		}
+
+		ticks = append(ticks, plot.Tick{
+			Value: float64(i),
+			Label: label,
+		})
+	}
+
+	return ticks
 }
