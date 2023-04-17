@@ -202,7 +202,7 @@ func (h *Handler) updateEvent(s *discordgo.Session, guildID string, messageID st
 func buildEventContent(name string, startTime time.Time, endTime time.Time, description string, location string, answers string) string {
 	loc, _ := time.LoadLocation("Europe/Helsinki")
 	format := "2.1 15:04"
-	return fmt.Sprintf("━━━━━━━━━━\n**%s** :man_lifting_weights:\n%s -> %s\n%s\n%s\n%s\n<@&1031539054971461673>\n━━━━━━━━━━", name, startTime.In(loc).Format(format), endTime.In(loc).Format(format), description, location, answers)
+	return fmt.Sprintf("**%s** :man_lifting_weights:\n%s -> %s\n%s\n%s\n%s\n<@&1031539054971461673>", name, startTime.In(loc).Format(format), endTime.In(loc).Format(format), description, location, answers)
 }
 
 func (h *Handler) messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
